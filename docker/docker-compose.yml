@@ -1,0 +1,77 @@
+services:
+  # -------------------------------------------------------
+  # Redpanda — Kafka-compatible streaming broker
+  # -------------------------------------------------------
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.7
+    container_name: redpanda
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+    ports:
+      - "19092:19092"   # Kafka API (external)
+      - "18082:18082"   # HTTP Proxy
+      - "18081:18081"   # Schema Registry
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------
+  # Redpanda Console — Web UI for topic inspection
+  # -------------------------------------------------------
+  console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: redpanda-console
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  # -------------------------------------------------------
+  # MongoDB — Document store for events
+  # -------------------------------------------------------
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------
+  # FastAPI — Backend API
+  # -------------------------------------------------------
+  api:
+   build:
+    context: .
+    dockerfile: Dockerfile
+   container_name: fake-trend-api
+   ports:
+    - "8000:8000"
+   depends_on:
+    - mongodb
+    - redpanda
+   env_file:
+    - ../.env
+
+volumes:
+  redpanda_data:
+  mongo_data:
